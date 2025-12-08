@@ -81,6 +81,17 @@ jobs:
           ssh-key: ${{ inputs.STRAIN_REPOSITORY != github.repository && secrets.SSH_PRIVATE_KEY || '' }}
           path: strains
 
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker system prune -af
+          sudo apt-get clean
+          echo "Disk space after cleanup:"
+          df -h
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -158,7 +169,7 @@ jobs:
           LOGS_FILE_PATH: /tmp/build_logs.out
         run: |
           tutor config save
-          (tutor images build $SERVICE --no-cache 2>&1) | tee $LOGS_FILE_PATH
+          (tutor images build $SERVICE 2>&1) | tee $LOGS_FILE_PATH
 
       - name: Scan build logs for potential errors in the image
         working-directory: ${{ github.workspace }}

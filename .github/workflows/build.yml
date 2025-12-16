@@ -162,7 +162,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
-      - name: Debug: locate Dockerfile and patches in the build context
+      - name: Debug locate Dockerfile and patches in the build context
         env:
           SERVICE: ${{ inputs.SERVICE }}
         run: |

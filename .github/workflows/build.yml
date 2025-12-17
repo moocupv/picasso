@@ -162,30 +162,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
-      - name: Debug locate Dockerfile and patches in the build context
-        env:
-          SERVICE: ${{ inputs.SERVICE }}
-        run: |
-          set -euxo pipefail
-          echo "PWD=$(pwd)"
-          echo "TUTOR_ROOT=$TUTOR_ROOT"
-          echo "STRAIN_PATH=${{ inputs.STRAIN_PATH }}"
-          echo "SERVICE=$SERVICE"
 
-          echo "Repo top (relative to working-directory):"
-          ls -la
-
-          echo "Where are patches?"
-          find . -maxdepth 6 -type f -name '*.patch' -print || true
-
-          echo "Where are Dockerfiles?"
-          find . -maxdepth 8 -type f -name Dockerfile -print || true
-
-          echo "Which Dockerfile adds edunext-platform?"
-          grep -R --line-number "edunext-platform.git#ednx-release/redwood.master" -n . || true
-
-          echo "Do we have our patch-copy marker / git apply?"
-          grep -R --line-number "git apply|/openedx/patches|Copy patches from the build context" -n environments/valencia/env/build/openedx/Dockerfile build/env/build/openedx/Dockerfile 2>/dev/null || true
       - name: Inject strain patches into rendered openedx Dockerfile
         if: ${{ inputs.SERVICE == 'openedx' }}
         run: |
@@ -249,8 +226,7 @@ jobs:
         env:
           SERVICE: ${{ inputs.SERVICE }}
           LOGS_FILE_PATH: /tmp/build_logs.out
-        run: |
-          tutor config save
+        run: |         
           (tutor images build $SERVICE 2>&1) | tee $LOGS_FILE_PATH
 
       - name: Scan build logs for potential errors in the image

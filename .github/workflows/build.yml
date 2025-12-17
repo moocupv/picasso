@@ -191,6 +191,7 @@ jobs:
 
           # Copy patches into build context
           mkdir -p "$PATCHES_DST_DIR"
+          ls -la "$PATCHES_SRC"/*.patch
           cp -v "$PATCHES_SRC"/*.patch "$PATCHES_DST_DIR"/
 
           # Make sure our insertion anchor exists
@@ -217,7 +218,9 @@ jobs:
           ' "$DOCKERFILE" > "$DOCKERFILE.tmp"
 
           mv "$DOCKERFILE.tmp" "$DOCKERFILE"
-
+          grep -nF "# --- BEGIN strain patches ---" "$DOCKERFILE"
+          grep -nF "git apply --verbose /openedx/patches/*.patch" "$DOCKERFILE"
+          
           echo "Injected block. Showing relevant section:"
           awk '
             NR<=220 {print}

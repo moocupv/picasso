@@ -192,8 +192,14 @@ jobs:
           # Copy patches into build context
           mkdir -p "$PATCHES_DST_DIR"
           ls -la "$PATCHES_SRC"/*.patch
-          cp -v "$PATCHES_SRC"/*.patch "$PATCHES_DST_DIR"/
-
+          shopt -s nullglob
+          patches=("$PATCHES_SRC"/*.patch)
+          if [ ${#patches[@]} -eq 0 ]; then
+            echo "No patches found in $PATCHES_SRC; skipping injection."
+            exit 0
+          fi
+          cp -v "${patches[@]}" "$PATCHES_DST_DIR"/
+          
           # Make sure our insertion anchor exists
           grep -nF "# Patches in non-nightly mode" "$DOCKERFILE"
 

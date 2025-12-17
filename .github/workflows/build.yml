@@ -186,6 +186,26 @@ jobs:
 
           echo "Do we have our patch-copy marker / git apply?"
           grep -R --line-number "git apply|/openedx/patches|Copy patches from the build context" -n environments/valencia/env/build/openedx/Dockerfile build/env/build/openedx/Dockerfile 2>/dev/null || true
+      - name: Debug - show rendered openedx build Dockerfile (if present)
+        run: |
+          set -euxo pipefail
+          tutor config save
+          ROOT="$(tutor config printroot | tail -n 1)"
+          echo "Tutor root: $ROOT"
+
+          echo "Searching for openedx Dockerfile under rendered env..."
+          find "$ROOT/env" -maxdepth 6 -type f -name Dockerfile -print
+
+          echo "Show openedx Dockerfile if found:"
+          if [ -f "$ROOT/env/build/openedx/Dockerfile" ]; then
+            sed -n '1,220p' "$ROOT/env/build/openedx/Dockerfile"
+          fi
+
+      - name: Debug - locate edunext-platform in rendered env
+        run: |
+          set -euxo pipefail
+          ROOT="$(tutor config printroot | tail -n 1)"
+          grep -R --line-number "EDX_PLATFORM_REPOSITORY|EDX_PLATFORM_VERSION|edunext-platform|git clone|WORKDIR" "$ROOT/env" || true
 
       - name: Build service image with no cache
         env:

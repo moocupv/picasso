@@ -191,7 +191,7 @@ jobs:
 
           # Copy patches into build context
           mkdir -p "$PATCHES_DST_DIR"
-          ls -la "$PATCHES_SRC"/*.patch
+          
           shopt -s nullglob
           patches=("$PATCHES_SRC"/*.patch)
           if [ ${#patches[@]} -eq 0 ]; then

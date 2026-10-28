@@ -99,6 +99,7 @@ jobs:
     env:
       TUTOR_ROOT: ${{ github.workspace }}/strains/${{ inputs.STRAIN_PATH }}
       TUTOR_PLUGINS_ROOT: ${{ github.workspace }}/strains/${{ inputs.STRAIN_PATH }}/plugins
+      ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION: "node20"
 
     steps:
       - name: Checkout Picasso repository for utility scripts
@@ -225,6 +226,10 @@ jobs:
           LOGS_FILE_PATH: /tmp/build_logs.out
         run: |
           tutor config save
+          # Parchear la versión de nodeenv en el Dockerfile generado por Tutor antes de compilar
+          if [ -f "env/build/openedx/Dockerfile" ]; then
+            sed -i 's/--node=18.20.1/--node=18.20.7/g' env/build/openedx/Dockerfile
+          fi
           (tutor images build $SERVICE --no-cache 2>&1) | tee $LOGS_FILE_PATH
 
       - name: Scan build logs for potential errors in the image

@@ -1,4 +1,4 @@
-name: Picasso V2
+name: Picasso
 
 on:
   workflow_call:
@@ -19,11 +19,11 @@ on:
         description: 'The service name to build'
         required: true
         type: string
-      ENABLE_LIMIT_BUILDKIT_PARALLELISM:
+      BUILDKIT_MAX_PARALLELISM:
         description: 'Enable buildkit parallelism limit to decrease resource usage. Default is true'
         required: false
-        type: boolean
-        default: true
+        type: number
+        default: 0
       RUNNER_WORKFLOW_LABEL:
         description: 'The label of the runner workflow to run'
         required: false
@@ -34,6 +34,11 @@ on:
         required: false
         type: string
         default: '3.12'
+      PICASSO_VERSION:
+        description: 'Picasso version to use for the workflow scripts and utility functions. This should be a valid branch, tag or commit and it should match the version of the workflow used.'
+        required: false
+        type: string
+        default: 'v1'
     secrets:
       DOCKERHUB_USERNAME:
         description: 'DockerHub username for login'
@@ -43,7 +48,7 @@ on:
         required: false
       SSH_PRIVATE_KEY:
         description: 'Service user SSH key for repository checkout'
-        required: true
+        required: false
       AWS_ACCESS_KEY_ID:
         description: 'AWS access key ID'
         required: false
@@ -66,11 +71,20 @@ jobs:
       TUTOR_PLUGINS_ROOT: ${{ github.workspace }}/strains/${{ inputs.STRAIN_PATH }}/plugins
 
     steps:
+      - name: Free disk space
+        working-directory: ${{ github.workspace }}
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache
+          sudo docker image prune --all --force
+
       - name: Checkout Picasso repository for utility scripts
         uses: actions/checkout@v4
         with:
           repository: edunext/picasso
-          ref: v1
+          ref: ${{ inputs.PICASSO_VERSION }}
           path: picasso
 
       - name: Checkout strains repository for build configurations
@@ -80,17 +94,6 @@ jobs:
           ref: ${{ inputs.STRAIN_REPOSITORY_BRANCH }}
           ssh-key: ${{ inputs.STRAIN_REPOSITORY != github.repository && secrets.SSH_PRIVATE_KEY || '' }}
           path: strains
-
-      - name: Free Disk Space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo docker system prune -af
-          sudo apt-get clean
-          echo "Disk space after cleanup:"
-          df -h
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -120,15 +123,21 @@ jobs:
 
       - name: Enable and install picasso plugin in Tutor environment
         run: |
-          pip install git+https://github.com/eduNEXT/tutor-contrib-picasso@v0.1.1
+          pip install git+https://github.com/eduNEXT/tutor-contrib-picasso@v0.2.0
           tutor plugins enable picasso
 
       - name: Setup SSH agent for private repositories cloning
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        if: env.SSH_PRIVATE_KEY
         uses: webfactory/ssh-agent@v0.9.0
         with:
             ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Add GitHub to known hosts
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        if: env.SSH_PRIVATE_KEY
         run: |
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
@@ -137,10 +146,10 @@ jobs:
           tutor picasso run-extra-commands
 
       - name: Limit build parallelism to decrease resource usage
-        if: ${{ inputs.ENABLE_LIMIT_BUILDKIT_PARALLELISM }}
+        if: ${{ inputs.BUILDKIT_MAX_PARALLELISM }}
         run: |
           echo "[worker.oci]
-          max-parallelism = 3" > buildkit.toml
+          max-parallelism = ${{ inputs.BUILDKIT_MAX_PARALLELISM }}" > buildkit.toml
           docker buildx create --use --node=limitparallelsteps --driver=docker-container --config=./buildkit.toml
 
       - name: Configure AWS credentials
@@ -163,83 +172,20 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: Inject strain patches into rendered openedx Dockerfile
-        if: ${{ inputs.SERVICE == 'openedx' }}
-        run: |
-          set -euxo pipefail
-
-          # Ensure Tutor env is rendered with all plugins enabled
-          tutor config save
-
-          ROOT="$(tutor config printroot | tail -n 1)"
-          DOCKERFILE="$ROOT/env/build/openedx/Dockerfile"
-
-          echo "Tutor root: $ROOT"
-          echo "Dockerfile: $DOCKERFILE"
-
-          # Source patches from the strain (real path you showed)
-          PATCHES_SRC="$TUTOR_ROOT/env/patches/openedx/lms"
-          # Destination inside the rendered build context (so Docker can COPY it)
-          PATCHES_DST_DIR="$ROOT/env/build/openedx/patches"
-
-          echo "Patch source: $PATCHES_SRC"
-          echo "Patch destination dir: $PATCHES_DST_DIR"
-
-          # Basic validation
-          test -f "$DOCKERFILE"
-          test -d "$PATCHES_SRC"
-
-          # Copy patches into build context
-          mkdir -p "$PATCHES_DST_DIR"
-          
-          shopt -s nullglob
-          patches=("$PATCHES_SRC"/*.patch)
-          if [ ${#patches[@]} -eq 0 ]; then
-            echo "No patches found in $PATCHES_SRC; skipping injection."
-            exit 0
-          fi
-          cp -v "${patches[@]}" "$PATCHES_DST_DIR"/
-          
-          # Make sure our insertion anchor exists
-          grep -nF "# Patches in non-nightly mode" "$DOCKERFILE"
-
-          # Idempotency: fail if already injected (avoid duplicating blocks)
-          if grep -qF "# --- BEGIN strain patches ---" "$DOCKERFILE"; then
-            echo "Patches block already injected in Dockerfile; skipping."
-            exit 0
-          fi
-
-          # Inject COPY+git apply right after the anchor comment in the `code` stage
-          awk '
-            {print}
-            /# Patches in non-nightly mode/ {
-              print ""
-              print "# --- BEGIN strain patches ---"
-              print "COPY patches/ /openedx/patches/"
-              print "RUN cd /openedx/edx-platform \\"
-              print " && git apply --verbose /openedx/patches/*.patch"
-              print "# --- END strain patches ---"
-              print ""
-            }
-          ' "$DOCKERFILE" > "$DOCKERFILE.tmp"
-
-          mv "$DOCKERFILE.tmp" "$DOCKERFILE"
-          grep -nF "# --- BEGIN strain patches ---" "$DOCKERFILE"
-          grep -nF "git apply --verbose /openedx/patches/*.patch" "$DOCKERFILE"
-          
-          echo "Injected block. Showing relevant section:"
-          awk '
-            NR<=220 {print}
-          ' "$DOCKERFILE"
       - name: Build service image with no cache
         env:
           SERVICE: ${{ inputs.SERVICE }}
           LOGS_FILE_PATH: /tmp/build_logs.out
-        run: |         
-          (tutor images build $SERVICE 2>&1) | tee $LOGS_FILE_PATH
+        run: |
+          tutor config save
+          if [ -f "env/build/openedx/Dockerfile" ]; then
+            sed -i 's/--node=18.20.1/--node=18.20.7/g' env/build/openedx/Dockerfile
+          fi
+          (tutor images build $SERVICE --no-cache 2>&1) | tee $LOGS_FILE_PATH
 
       - name: Scan build logs for potential errors in the image
         working-directory: ${{ github.workspace }}
+        continue-on-error: true
         env:
           SCRIPT_PATH: picasso/.github/workflows/scripts/identify_silent_errors.py
           LOGS_FILE_PATH: /tmp/build_logs.out

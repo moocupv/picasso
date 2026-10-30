@@ -102,17 +102,28 @@ jobs:
       ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION: "node20"
 
     steps:
-      - name: Free disk space on runner
+      - name: Free disk space aggressively
         working-directory: ${{ github.workspace }}
         run: |
           echo "=== Espacio antes de la limpieza ==="
           df -h
+          
+          # Eliminar entornos y toolcaches preinstaladas en GitHub Actions
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force
-          echo "=== Espacio disponible tras liberar ==="
+          sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          
+          # Limpiar Docker y gestores de paquetes del host
+          sudo docker system prune -af --volumes
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          
+          echo "=== Espacio tras limpieza agresiva ==="
           df -h
 
       - name: Checkout Picasso repository for utility scripts
@@ -206,12 +217,13 @@ jobs:
         run: |
           tutor picasso run-extra-commands
 
-      - name: Limit build parallelism to decrease resource usage
-        if: ${{ inputs.BUILDKIT_MAX_PARALLELISM }}
+      - name: Limit build parallelism and configure storage to decrease resource usage
         run: |
           echo "[worker.oci]
-          max-parallelism = ${{ inputs.BUILDKIT_MAX_PARALLELISM }}" > buildkit.toml
-          docker buildx create --use --node=limitparallelsteps --driver=docker-container --config=./buildkit.toml
+            max-parallelism = 1
+            gc = true
+            gckeepstorage = 10000" > buildkit.toml
+          docker buildx create --use --name mybuilder --driver=docker-container --config=./buildkit.toml
 
       - name: Configure AWS credentials
         if: ${{ contains(env.DOCKER_REGISTRY, 'aws') }}

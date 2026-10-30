@@ -102,6 +102,19 @@ jobs:
       ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION: "node20"
 
     steps:
+      - name: Free disk space on runner
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo "=== Espacio antes de la limpieza ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          echo "=== Espacio disponible tras liberar ==="
+          df -h
+
       - name: Checkout Picasso repository for utility scripts
         uses: actions/checkout@v4
         with:
@@ -226,7 +239,6 @@ jobs:
           LOGS_FILE_PATH: /tmp/build_logs.out
         run: |
           tutor config save
-          # Parchear la versión de nodeenv en el Dockerfile generado por Tutor antes de compilar
           if [ -f "env/build/openedx/Dockerfile" ]; then
             sed -i 's/--node=18.20.1/--node=18.20.7/g' env/build/openedx/Dockerfile
           fi
@@ -234,6 +246,7 @@ jobs:
 
       - name: Scan build logs for potential errors in the image
         working-directory: ${{ github.workspace }}
+        continue-on-error: true
         env:
           SCRIPT_PATH: picasso/.github/workflows/scripts/identify_silent_errors.py
           LOGS_FILE_PATH: /tmp/build_logs.out

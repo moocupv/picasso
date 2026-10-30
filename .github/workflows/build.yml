@@ -4,107 +4,89 @@ on:
   workflow_call:
     inputs:
       STRAIN_REPOSITORY:
-        description: "The repository for strains to checkout. It should follow the format: ORGANIZATION/REPO"
+        description: 'The repository for strains to checkout. It should follow the format: ORGANIZATION/REPO'
         required: true
         type: string
       STRAIN_REPOSITORY_BRANCH:
-        description: "The branch of the repository to checkout"
+        description: 'The branch of the repository to checkout'
         required: true
         type: string
       STRAIN_PATH:
-        description: "The path within the repository for strains"
+        description: 'The path within the repository for strains'
         required: true
         type: string
       SERVICE:
-        description: "The service name to build"
+        description: 'The service name to build'
         required: true
         type: string
       BUILDKIT_MAX_PARALLELISM:
-        description: "Enable buildkit parallelism limit to decrease resource usage. Default is true"
+        description: 'Enable buildkit parallelism limit to decrease resource usage. Default is true'
         required: false
         type: number
         default: 0
       RUNNER_WORKFLOW_LABEL:
-        description: "The label of the runner workflow to run"
+        description: 'The label of the runner workflow to run'
         required: false
         type: string
-        default: "ubuntu-24.04"
+        default: 'ubuntu-24.04'
       PYTHON_VERSION:
-        description: "Python version to use for the workflow"
+        description: 'Python version to use for the workflow'
         required: false
         type: string
-        default: "3.12"
+        default: '3.12'
       PICASSO_VERSION:
-        description: "Picasso version to use for the workflow scripts and utility functions. This should be a valid branch, tag or commit and it should match the version of the workflow used."
+        description: 'Picasso version to use for the workflow scripts and utility functions. This should be a valid branch, tag or commit and it should match the version of the workflow used.'
         required: false
         type: string
-        default: "v1"
+        default: 'v1'
       USE_DYNAMIC_IMAGE_TAG:
-        description: "If set to true, the image tag defined in config.yml will be ignored, and a dynamically generated tag will be used instead."
+        description: 'If set to true, the image tag defined in config.yml will be ignored, and a dynamically generated tag will be used instead.'
         required: false
         type: boolean
         default: false
       UPDATE_IMAGE_TAG_IN_REPO:
-        description: "If this field is set to true, a commit will be created with the updated image tag name in the config.yml file"
+        description: 'If this field is set to true, a commit will be created with the updated image tag name in the config.yml file'
         required: false
         type: boolean
         default: false
-      CLEAN_UP_DISK_SPACE:
-        description: "If this field is set to true, some pre-installed resources on the runner will be removed."
-        required: false
-        type: boolean
-        default: true
       ADD_RANDOM_SUFFIX_TO_IMAGE_TAG:
-        description: "Appends a random four-character alphanumeric suffix to the image tag by default. If RANDOM_SUFFIX_LENGTH is defined, the length of the suffix will be determined by that setting. This option is only used if USE_DYNAMIC_IMAGE_TAG is enabled."
+        description: 'Appends a random four-character alphanumeric suffix to the image tag by default. If RANDOM_SUFFIX_LENGTH is defined, the length of the suffix will be determined by that setting. This option is only used if USE_DYNAMIC_IMAGE_TAG is enabled.'
         required: false
         type: boolean
         default: false
       RANDOM_SUFFIX_LENGTH:
-        description: "Specifies the number of random characters to append as a random suffix"
+        description: 'Specifies the number of random characters to append as a random suffix'
         required: false
         type: string
         default: "4"
       IMAGE_TAG_PREFIX:
-        description: "Prefix added to the dynamically generated image tag. Only used if USE_DYNAMIC_IMAGE_TAG is enabled."
+        description: 'Prefix added to the dynamically generated image tag. Only used if USE_DYNAMIC_IMAGE_TAG is enabled.'
         required: false
         type: string
         default: ""
       TIMESTAMP_FORMAT:
-        description: "Timestamp format used in the generated image tag. Follows Python’s strftime syntax. Only used if USE_DYNAMIC_IMAGE_TAG is enabled."
+        description: 'Timestamp format used in the generated image tag. Follows Python’s strftime syntax. Only used if USE_DYNAMIC_IMAGE_TAG is enabled.'
         required: false
         type: string
         default: "%Y%m%d-%H%M"
-      GIT_COMMIT_USER_NAME:
-        description: "The name of the user used to do commit changes."
-        required: false
-        type: string
-        default: "GitHub Actions"
-      GIT_COMMIT_USER_EMAIL:
-        description: "The email address of the user used to do commit changes."
-        required: false
-        type: string
-        default: "actions@github.com"
     secrets:
       DOCKERHUB_USERNAME:
-        description: "DockerHub username for login"
+        description: 'DockerHub username for login'
         required: false
       DOCKERHUB_PASSWORD:
-        description: "DockerHub password for login"
-        required: false
-      SSH_PRIVATE_KEYS:
-        description: "One or more SSH private keys (multiline). Supports multiple deploy keys."
+        description: 'DockerHub password for login'
         required: false
       SSH_PRIVATE_KEY:
-        description: "DEPRECATED: single SSH key"
+        description: 'Service user SSH key for repository checkout'
         required: false
       AWS_ACCESS_KEY_ID:
-        description: "AWS access key ID"
+        description: 'AWS access key ID'
         required: false
       AWS_SECRET_ACCESS_KEY:
-        description: "AWS secret access key"
+        description: 'AWS secret access key'
         required: false
       AWS_REGION:
-        description: "AWS region"
+        description: 'AWS region'
         required: false
 
 jobs:
@@ -117,8 +99,33 @@ jobs:
     env:
       TUTOR_ROOT: ${{ github.workspace }}/strains/${{ inputs.STRAIN_PATH }}
       TUTOR_PLUGINS_ROOT: ${{ github.workspace }}/strains/${{ inputs.STRAIN_PATH }}/plugins
+      ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION: "node20"
 
     steps:
+      - name: Free disk space aggressively
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo "=== Espacio antes de la limpieza ==="
+          df -h
+          
+          # Eliminar entornos y toolcaches preinstaladas en GitHub Actions
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          
+          # Limpiar Docker y gestores de paquetes del host
+          sudo docker system prune -af --volumes
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          
+          echo "=== Espacio tras limpieza agresiva ==="
+          df -h
+
       - name: Checkout Picasso repository for utility scripts
         uses: actions/checkout@v4
         with:
@@ -133,17 +140,6 @@ jobs:
           ref: ${{ inputs.STRAIN_REPOSITORY_BRANCH }}
           ssh-key: ${{ inputs.STRAIN_REPOSITORY != github.repository && secrets.SSH_PRIVATE_KEY || '' }}
           path: strains
-
-      - name: Clean Up Disk Space
-        if: ${{ runner.os == 'Linux' && inputs.CLEAN_UP_DISK_SPACE }}
-        run: |
-          sudo rm -rf /usr/lib/jvm
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/local/share/powershell
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/share/swift
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -205,33 +201,29 @@ jobs:
       - name: Setup SSH agent for private repositories cloning
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_PRIVATE_KEYS: ${{ secrets.SSH_PRIVATE_KEYS }}
-          HAS_SSH_KEYS: ${{ secrets.SSH_PRIVATE_KEY != '' || secrets.SSH_PRIVATE_KEYS != '' }}
-        if: env.HAS_SSH_KEYS == 'true'
+        if: env.SSH_PRIVATE_KEY
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: |
-            ${{ secrets.SSH_PRIVATE_KEY }}
-            ${{ secrets.SSH_PRIVATE_KEYS }}
+            ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Add GitHub to known hosts
         env:
-          HAS_SSH_KEYS: ${{ secrets.SSH_PRIVATE_KEY != '' || secrets.SSH_PRIVATE_KEYS != '' }}
-        if: env.HAS_SSH_KEYS == 'true'
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        if: env.SSH_PRIVATE_KEY
         run: |
-          mkdir -p ~/.ssh
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Execute extra commands
         run: |
           tutor picasso run-extra-commands
 
-      - name: Limit build parallelism to decrease resource usage
-        if: ${{ inputs.BUILDKIT_MAX_PARALLELISM }}
+      - name: Limit build parallelism and configure storage to decrease resource usage
         run: |
           echo "[worker.oci]
-          max-parallelism = ${{ inputs.BUILDKIT_MAX_PARALLELISM }}" > buildkit.toml
-          docker buildx create --use --node=limitparallelsteps --driver=docker-container --config=./buildkit.toml
+            max-parallelism = 1
+            gc = true
+            gckeepstorage = 10000" > buildkit.toml
+          docker buildx create --use --name mybuilder --driver=docker-container --config=./buildkit.toml
 
       - name: Configure AWS credentials
         if: ${{ contains(env.DOCKER_REGISTRY, 'aws') }}
@@ -246,14 +238,6 @@ jobs:
         if: ${{ contains(env.DOCKER_REGISTRY, 'aws') }}
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Login to GitHub Container Registry if Docker registry is GitHub Container Registry
-        if: ${{ contains(env.DOCKER_REGISTRY, 'ghcr.io') }}
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Login to DockerHub if Docker registry is DockerHub or not set
         if: ${{ env.DOCKER_REGISTRY == null || contains(env.DOCKER_REGISTRY, 'docker.io') }}
         uses: docker/login-action@v3
@@ -267,10 +251,14 @@ jobs:
           LOGS_FILE_PATH: /tmp/build_logs.out
         run: |
           tutor config save
+          if [ -f "env/build/openedx/Dockerfile" ]; then
+            sed -i 's/--node=18.20.1/--node=18.20.7/g' env/build/openedx/Dockerfile
+          fi
           (tutor images build $SERVICE --no-cache 2>&1) | tee $LOGS_FILE_PATH
 
       - name: Scan build logs for potential errors in the image
         working-directory: ${{ github.workspace }}
+        continue-on-error: true
         env:
           SCRIPT_PATH: picasso/.github/workflows/scripts/identify_silent_errors.py
           LOGS_FILE_PATH: /tmp/build_logs.out
@@ -294,11 +282,9 @@ jobs:
           CONFIG_FILE: ${{ inputs.STRAIN_PATH }}/config.yml
           SERVICE: ${{ inputs.SERVICE }}
           SCRIPT_PATH: ../picasso/.github/workflows/scripts/dynamic_image_tag.py
-          GIT_COMMIT_USER_NAME: ${{ inputs.GIT_COMMIT_USER_NAME }}
-          GIT_COMMIT_USER_EMAIL: ${{ inputs.GIT_COMMIT_USER_EMAIL }}
         run: |
-          git config user.name "$GIT_COMMIT_USER_NAME"
-          git config user.email "$GIT_COMMIT_USER_EMAIL"
+          git config user.name "GitHub Actions" 
+          git config user.email "actions@github.com"
           git stash
           git pull origin ${{ inputs.STRAIN_REPOSITORY_BRANCH }}
           python $SCRIPT_PATH \

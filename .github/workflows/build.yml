@@ -71,14 +71,24 @@ jobs:
       TUTOR_PLUGINS_ROOT: ${{ github.workspace }}/strains/${{ inputs.STRAIN_PATH }}/plugins
 
     steps:
-      - name: Free disk space
+      - name: Free disk space aggressively
         working-directory: ${{ github.workspace }}
         run: |
+          echo "=== Espacio antes de la limpieza ==="
+          df -h
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache
-          sudo docker image prune --all --force
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo docker system prune -af --volumes
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          echo "=== Espacio disponible tras limpieza ==="
+          df -h
 
       - name: Checkout Picasso repository for utility scripts
         uses: actions/checkout@v4
@@ -145,12 +155,13 @@ jobs:
         run: |
           tutor picasso run-extra-commands
 
-      - name: Limit build parallelism to decrease resource usage
-        if: ${{ inputs.BUILDKIT_MAX_PARALLELISM }}
+      - name: Limit build parallelism and configure storage
         run: |
           echo "[worker.oci]
-          max-parallelism = ${{ inputs.BUILDKIT_MAX_PARALLELISM }}" > buildkit.toml
-          docker buildx create --use --node=limitparallelsteps --driver=docker-container --config=./buildkit.toml
+            max-parallelism = 1
+            gc = true
+            gckeepstorage = 8000" > buildkit.toml
+          docker buildx create --use --name mybuilder --driver=docker-container --config=./buildkit.toml
 
       - name: Configure AWS credentials
         if: ${{ contains(env.DOCKER_REGISTRY, 'aws') }}
@@ -173,6 +184,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       - name: Build service image with no cache
+        timeout-minutes: 180
         env:
           SERVICE: ${{ inputs.SERVICE }}
           LOGS_FILE_PATH: /tmp/build_logs.out
